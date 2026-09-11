@@ -1,0 +1,40 @@
+# Compiled binary. `go build -o typing .` drops it here; the name matches the
+# module, so an unqualified build lands on this path too.
+/typing
+/typing.exe
+
+# Anything built into a conventional output directory.
+/bin/
+/dist/
+
+# Go build/test artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+# Binaries from `go test -c`
+*.test
+# Coverage and profile output (`go test -coverprofile`, pprof)
+*.out
+# Not used here; ignored rather than half-committed later.
+/vendor/
+
+# Go workspace files — machine-local by design, never shared.
+go.work
+go.work.sum
+
+# Editor / tooling
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Environment: never commit secrets.
+.env
+.env.*
+!.env.example
