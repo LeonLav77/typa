@@ -3,6 +3,12 @@
 /typing
 /typing.exe
 
+# Run database (WAL mode creates -shm and -wal alongside it). This is your
+# collected data, not build output -- back it up, don't commit it.
+*.db
+*.db-shm
+*.db-wal
+
 # Anything built into a conventional output directory.
 /bin/
 /dist/

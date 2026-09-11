@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>overview · typing</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script type="module" src="/static/overview.js"></script>
+  </head>
+  <body class="page">
+    {{ template "menu" . }}
+
+    <main class="sheet">
+      <header class="sheet-head">
+        <h1>overview</h1>
+        <p class="corpus">{{ .Runs }} run{{ if ne .Runs 1 }}s{{ end }} recorded</p>
+      </header>
+
+      <div data-overview>
+        <p class="pending">Reading your data…</p>
+      </div>
+    </main>
+  </body>
+</html>

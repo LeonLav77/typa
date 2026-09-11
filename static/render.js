@@ -104,8 +104,16 @@ export function createRenderer(root, caret) {
     caret.style.height = `${ref.offsetHeight}px`;
 
     if (lineHeight) {
+      // Keep the active line parked one line below the top of a taller
+      // viewport, so there is always context above and several lines of
+      // lookahead below. Reads --rows from CSS so the two cannot disagree.
+      const rows = parseInt(
+        getComputedStyle(root).getPropertyValue('--rows'), 10,
+      ) || 3;
+      const keepAbove = rows >= 5 ? 2 : 1;
       const line = Math.round(y / lineHeight);
-      scroller.style.transform = `translateY(${-Math.max(0, line - 1) * lineHeight}px)`;
+      scroller.style.transform =
+        `translateY(${-Math.max(0, line - keepAbove) * lineHeight}px)`;
     }
   }
 

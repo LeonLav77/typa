@@ -4,11 +4,15 @@
   --dim: #4b4f59;      /* untyped text */
   --fg: #e9ebef;       /* correctly typed */
   --bad: #ff6b6b;
+  --ok: #5ec26a;       /* a finding in your favour */
   --accent: #ffc46b;   /* caret */
   --muted: #6b7078;
   --line: #23262c;
   --text-size: clamp(1.25rem, 2.4vw, 1.8rem);
   --lh: 1.9;
+  /* Visible lines of text. render.js reads this, so changing it here changes
+     both the viewport height and where the active line is parked. */
+  --rows: 6;
 }
 
 @media (prefers-color-scheme: light) {
@@ -18,6 +22,7 @@
     --dim: #b7b4ad;
     --fg: #17181a;
     --bad: #cc3b3b;
+    --ok: #2e8b3d;
     --accent: #c07c12;
     --muted: #8a8781;
     --line: #e4e2dd;
@@ -76,7 +81,7 @@ body {
 }
 .viewport {
   overflow: hidden;
-  height: calc(var(--text-size) * var(--lh) * 3);
+  height: calc(var(--text-size) * var(--lh) * var(--rows));
 }
 .viewport.hidden { display: none; }
 .scroller {
@@ -159,3 +164,473 @@ kbd {
   .caret, .scroller { transition: none; }
   .caret.blink { animation: none; }
 }
+
+/* insights ------------------------------------------------------------- */
+.insights {
+  display: grid;
+  gap: 1.5rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1.5rem;
+}
+
+/* findings: plain statements, evidence underneath */
+.findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.7rem;
+}
+.findings li {
+  display: grid;
+  gap: 0.15rem;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--line);
+}
+.findings li.watch { border-left-color: var(--bad); }
+.findings li.good  { border-left-color: var(--ok, #5ec26a); }
+.f-text   { font-size: 0.95rem; }
+.f-detail { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+
+/* charts */
+.findings + .panels { margin-top: 2rem; }
+.panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1.5rem 2rem;
+  align-items: start;
+}
+.panel { margin: 0; display: grid; gap: 0.5rem; }
+.panel figcaption {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  white-space: nowrap;
+}
+.panel figcaption > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.panel figcaption span { opacity: 0.7; }
+.plot { width: 100%; }
+
+/* Charts are drawn to a fixed viewBox and stretched to fit; the explicit
+   height keeps them legible instead of collapsing to a sliver. */
+.chart { width: 100%; height: 7.5rem; display: block; overflow: visible; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 9px; font-family: inherit; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; }
+.chart .area { fill: var(--accent); opacity: 0.10; stroke: none; }
+.chart .dot  { fill: var(--accent); }
+
+/* horizontal bars */
+.bars { display: grid; gap: 0.4rem; }
+.bar-row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr 3rem;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.75rem;
+}
+.bar-label { color: var(--muted); }
+.bar-track {
+  height: 0.55rem;
+  background: var(--surface);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+.bar-fill.good { background: var(--ok, #5ec26a); }
+.bar-fill.bad  { background: var(--bad); }
+.bar-value {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.corpus {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The typing hints belong to the test, not the results. Hidden once a run
+   ends so the summary is not competing with instructions for keys you have
+   just finished using. */
+.hints.done { visibility: hidden; }
+
+/* two-section insights: this run vs over time */
+.block { display: grid; gap: 0.9rem; }
+.block + .block {
+  border-top: 1px solid var(--line);
+  padding-top: 1.25rem;
+}
+.block-title {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: lowercase;
+  color: var(--muted);
+}
+.stack { display: grid; gap: 1.25rem; }
+.findings:empty { display: none; }
+
+/* the honest "not yet" state */
+.pending {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--fg);
+  display: grid;
+  gap: 0.25rem;
+}
+.pending b { color: var(--accent); font-weight: 500; }
+
+/* a plain observation, as opposed to a judgement */
+.findings li.note { border-left-color: var(--muted); }
+
+/* ===================================================== keyboard menu ==== */
+.menu-hint {
+  position: fixed;
+  bottom: 0.9rem;
+  right: 1.1rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+  z-index: 5;
+}
+.menu-hint.faded { opacity: 0; }
+
+.menu {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.menu.on { opacity: 1; }
+.menu ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.15rem;
+  min-width: min(26rem, 88vw);
+}
+.menu a {
+  display: grid;
+  grid-template-columns: 2rem 8rem 1fr;
+  align-items: baseline;
+  gap: 0.9rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 4px;
+  text-decoration: none;
+  color: var(--fg);
+  border: 1px solid transparent;
+}
+.menu a:hover { background: var(--surface); }
+.menu li.on a {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.menu kbd {
+  justify-self: start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  font-size: 0.75rem;
+  padding: 0.15em 0.45em;
+}
+.m-title { font-size: 0.9rem; }
+.m-blurb { color: var(--muted); font-size: 0.73rem; }
+
+/* ================================================== analytics pages ==== */
+body.page {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+.sheet {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: clamp(1.5rem, 5vh, 3rem) clamp(1rem, 5vw, 3rem) 5rem;
+}
+.sheet-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 0.9rem;
+  margin-bottom: 1.75rem;
+}
+.sheet-head h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 2rem 2.5rem;
+  align-items: start;
+}
+.table { display: grid; gap: 0.5rem; }
+.table h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  text-transform: lowercase;
+}
+.table .note {
+  margin: -0.2rem 0 0.3rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+/* analytics rows carry a trailing sample-size column */
+.table .bar-row {
+  grid-template-columns: minmax(5rem, 9rem) 1fr 3.6rem 2.8rem;
+  gap: 0.55rem;
+}
+.table .bar-label {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-n {
+  text-align: right;
+  color: var(--muted);
+  opacity: 0.65;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ======================================================= setup tag ==== */
+/* The context line on the test screen. It answers "what will this run be
+   tagged as" at a glance and is otherwise meant to disappear -- it sits at
+   the same weight as the menu hint, opposite it, so neither draws the eye
+   away from the words. */
+.setup-tag {
+  position: fixed;
+  bottom: 0.9rem;
+  left: 1.1rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  opacity: 0.45;
+  transition: opacity 140ms ease;
+  z-index: 5;
+}
+.setup-tag:hover { opacity: 0.9; }
+
+/* ===================================================== setup page ==== */
+.setup { display: grid; gap: 2.25rem; margin-top: 2rem; }
+.setup-group h2 {
+  font-size: 0.82rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+.choices { display: grid; gap: 0.3rem; max-width: 38rem; }
+.choice {
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.choice:hover { background: var(--surface); }
+/* The active choice is marked with a real border, not just a tint: on a dim
+   palette a background alone is too easy to miss. */
+.choice.on {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+.c-label { color: var(--fg); }
+.choice.on .c-label { color: var(--accent); }
+.c-blurb { color: var(--muted); font-size: 0.72rem; }
+.resolved { color: var(--muted); font-size: 0.72rem; }
+
+.note.dim { color: var(--muted); font-size: 0.75rem; max-width: 38rem; }
+.inline-btn {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 0.2em 0.6em;
+  margin: 0 0.3em;
+  cursor: pointer;
+}
+.inline-btn:hover { background: var(--surface); }
+
+/* ============================================== setup: type to choose ==== */
+/* The query line. It holds its height whether or not anything is typed, so
+   the choices below never jump as the query changes. */
+.setup-hint {
+  min-height: 1.4rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.setup-hint kbd {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.7rem;
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+}
+.q-text { color: var(--fg); letter-spacing: 0.04em; }
+.q-caret {
+  display: inline-block;
+  width: 1px;
+  height: 0.9rem;
+  background: var(--accent);
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+.q-ready { color: var(--accent); }
+.q-none { color: var(--bad); }
+
+/* Non-matching choices recede rather than vanishing: the list keeps its
+   position, so the eye does not re-find it on every keystroke. */
+.choice.faded { opacity: 0.25; }
+/* The single remaining match, i.e. the one enter will take. */
+.choice.ready {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.choice.ready .c-label { color: var(--accent); }
+/* A manual choice reads slightly brighter than a detected one, with a dot:
+   it is the tag that can silently go stale, so it should not look identical
+   to one the app worked out for itself. */
+.setup-tag.held { opacity: 0.7; }
+.held-dot { color: var(--accent); margin-left: 0.3em; }
+
+/* Text toggles. Several can be on at once, so they get a box rather than the
+   single-selection treatment the other groups use. */
+.choice.toggle .c-label { display: flex; align-items: baseline; gap: 0.5rem; }
+.box {
+  display: inline-grid;
+  place-items: center;
+  width: 0.95em;
+  height: 0.95em;
+  border: 1px solid var(--muted);
+  border-radius: 2px;
+  font-size: 0.85em;
+  line-height: 1;
+  color: var(--accent);
+  flex: none;
+}
+.choice.toggle.on .box { border-color: var(--accent); }
+
+/* The live sample on /text. Set in the same face as the test itself, so what
+   you see here is what you will be typing. */
+.preview .sample {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--dim);
+  font-size: 0.95rem;
+  line-height: 1.8;
+  min-height: 4.4rem;
+}
+
+/* Sliders sit under the toggle they belong to, indented so the pairing reads
+   without a box around it. Shown only while that flag is on. */
+.choice-wrap { display: grid; gap: 0.3rem; }
+.slider {
+  display: grid;
+  grid-template-columns: 5rem 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.1rem 0.9rem 0.35rem 2.3rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.s-label { letter-spacing: 0.04em; }
+.s-value { color: var(--accent); letter-spacing: 0.22em; font-size: 0.8rem; }
+
+/* A flat, themed range control: the native one is chrome-coloured and would
+   be the only part of the page that ignores the palette. */
+.slider input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: var(--line);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.slider input[type='range']::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.slider input[type='range']:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+
+/* The slider belonging to the active row shows its keys instead of a label,
+   so which arrows do what is answered where you are looking. */
+.slider.active .s-label kbd {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--accent);
+  font-size: 0.62rem;
+  padding: 0.05em 0.3em;
+  border-radius: 2px;
+  margin-right: 0.1em;
+}
+.slider.active .s-value { color: var(--accent); }

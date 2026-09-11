@@ -9,6 +9,7 @@
     <script type="module" src="/static/main.js"></script>
   </head>
   <body>
+    {{ template "menu" . }}
     <main class="app" x-data="typing" x-cloak>
       <header class="bar">
         <span class="mark">typing</span>
@@ -22,7 +23,7 @@
       <section class="stage">
         <div class="viewport" :class="phase === 'done' && 'hidden'">
           <div class="scroller">
-            <div class="text" x-ref="text" data-test-id="{{ .ID }}">{{ range $i, $chars := .Chars }}{{ if $i }} {{ end }}<span class="word" data-i="{{ $i }}">{{ range $c := $chars }}<span class="char">{{ $c }}</span>{{ end }}</span>{{ end }}</div>
+            <div class="text" x-ref="text" data-test-id="{{ .ID }}" data-mode="{{ .Mode }}">{{ range $i, $chars := .Chars }}{{ if $i }} {{ end }}<span class="word" data-i="{{ $i }}">{{ range $c := $chars }}<span class="char">{{ $c }}</span>{{ end }}</span>{{ end }}</div>
             <div class="caret" x-ref="caret" :class="phase === 'idle' && 'blink'"></div>
           </div>
         </div>
@@ -38,15 +39,43 @@
             <div><dt>time</dt><dd x-text="result?.seconds.toFixed(1) + 's'"></dd></div>
             <div><dt>clean words</dt><dd><span x-text="result?.wordsRight"></span>/<span x-text="result?.words"></span></dd></div>
           </dl>
+          <section class="insights" x-show="insights">
+            <!-- Just this run. The lifetime picture lives on the analytics
+                 pages; repeating it here made finishing a test feel like
+                 opening a dashboard. -->
+            <ul class="findings">
+              <template x-for="n in notes" :key="n.kind">
+                <li :class="n.tone">
+                  <span class="f-text" x-text="n.text"></span>
+                  <span class="f-detail" x-text="n.detail"></span>
+                </li>
+              </template>
+            </ul>
+
+            <p class="corpus">
+              <span x-text="insights?.all?.runs"></span> runs ·
+              <span x-text="insights?.all?.keystrokes?.toLocaleString()"></span> keystrokes ·
+              hold <kbd>alt</kbd> for the full breakdown
+            </p>
+          </section>
+
           <p class="again">press <kbd>enter</kbd> for a new test</p>
         </div>
       </section>
 
-      <footer class="hints">
+      <footer class="hints" :class="phase === 'done' && 'done'">
         <span><kbd>space</kbd> next word</span>
         <span><kbd>esc</kbd> new text</span>
         <span><kbd>shift</kbd>+<kbd>⌫</kbd> clear word</span>
       </footer>
+
+      <!-- What this run will be tagged with. Deliberately quiet: it matters
+           only when it is wrong, so it must be readable without competing
+           with the text. -->
+      <a class="setup-tag" href="/setup" :class="setupHeld && 'held'"
+         :title="setupHeld ? 'set by hand — click to change' : 'detected — click to change'">
+        <span x-text="setup"></span><span x-show="setupHeld" class="held-dot">•</span>
+      </a>
     </main>
   </body>
 </html>

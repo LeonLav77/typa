@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ .Title }} · typing</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script type="module" src="/static/menu.js"></script>
+  </head>
+  <body class="page">
+    {{ template "menu" . }}
+
+    <main class="sheet">
+      <header class="sheet-head">
+        <h1>{{ .Title }}</h1>
+        <p class="corpus">{{ .Runs }} run{{ if ne .Runs 1 }}s{{ end }} recorded</p>
+      </header>
+
+      {{ if .Empty }}
+        <p class="pending">Nothing recorded yet. <span class="f-detail">Finish a test and these fill in.</span></p>
+      {{ else }}
+        <div class="tables">
+          {{ range .Data }}
+            {{ if .Rows }}
+              <section class="table">
+                <h2>{{ .Title }}</h2>
+                {{ if .Note }}<p class="note">{{ .Note }}</p>{{ end }}
+                <div class="bars">
+                  {{ $t := . }}
+                  {{ range .Rows }}
+                    <div class="bar-row">
+                      <span class="bar-label">{{ .Label }}</span>
+                      <span class="bar-track">
+                        <span class="bar-fill" style="width:{{ $t.Bar . }}%"></span>
+                      </span>
+                      <span class="bar-value">{{ $t.Value . }}</span>
+                      <span class="bar-n">{{ .Count }}</span>
+                    </div>
+                  {{ end }}
+                </div>
+              </section>
+            {{ end }}
+          {{ end }}
+        </div>
+      {{ end }}
+    </main>
+  </body>
+</html>
+
+{{ define "menu" }}
+<div class="menu-hint" data-menu-hint>
+  hold <kbd>alt</kbd> for menu
+</div>
+<nav class="menu" data-menu hidden>
+  <ul>
+    {{ range .Sections }}
+      <li{{ if eq $.Active .Path }} class="on"{{ end }}>
+        <a href="{{ .Path }}" data-key="{{ .Key }}">
+          <kbd>{{ .Key }}</kbd>
+          <span class="m-title">{{ .Title }}</span>
+          <span class="m-blurb">{{ .Blurb }}</span>
+        </a>
+      </li>
+    {{ end }}
+  </ul>
+</nav>
+{{ end }}

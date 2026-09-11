@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>setup · typing</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script type="module" src="/static/setup.js"></script>
+  </head>
+  <body class="page">
+    {{ template "menu" . }}
+
+    <main class="sheet">
+      <header class="sheet-head">
+        <h1>setup</h1>
+        <p class="corpus" data-current>…</p>
+      </header>
+
+      <p class="note">
+        Every run is tagged with where you were and what you typed on, so a
+        guest's test or a session on a laptop keyboard never lands in your own
+        numbers. Detection handles what the browser can see; set it by hand for
+        anything it cannot.
+      </p>
+
+      <div class="setup" data-setup></div>
+    </main>
+  </body>
+</html>

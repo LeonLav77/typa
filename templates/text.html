@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>text · typing</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <script type="module" src="/static/text.js"></script>
+  </head>
+  <body class="page">
+    {{ template "menu" . }}
+
+    <main class="sheet">
+      <header class="sheet-head">
+        <h1>text</h1>
+        <p class="corpus">what the test is made of</p>
+      </header>
+
+      <p class="note">
+        Words and numbers are sources and combine; punctuation and capitals
+        decorate whatever they produce. Turn words off with numbers on for a
+        digits-only test.
+      </p>
+
+      <div data-text></div>
+    </main>
+  </body>
+</html>

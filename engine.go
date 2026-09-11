@@ -10,6 +10,7 @@ const WordCount = 50
 type Test struct {
 	ID    string   `json:"id"`
 	Words []string `json:"words"`
+	Mode  string   `json:"mode"`
 }
 
 // Chars splits each word into its characters, because html/template cannot
@@ -36,9 +37,20 @@ func pickWords(n int) []string {
 	return out
 }
 
-// newTest deals a fresh test.
+// newTest deals a fresh test of plain words.
 func newTest() Test {
-	return Test{ID: randomID(), Words: pickWords(WordCount)}
+	return newTestMode(defaultMode())
+}
+
+// newTestMode deals a test built to a mode. The mode travels on the Test so a
+// submitted run can record what it was asked to type, which is what keeps
+// "slow at punctuation" separable from "slow".
+func newTestMode(m Mode) Test {
+	return Test{
+		ID:    randomID(),
+		Words: generate(rand.New(rand.NewSource(rand.Int63())), WordCount, m),
+		Mode:  m.String(),
+	}
 }
 
 const idAlphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
