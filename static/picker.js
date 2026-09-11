@@ -40,13 +40,24 @@ export function matches(items, q) {
  *
  * `onAdjust(item, delta)` is optional: supply it and left/right act on the
  * narrowed choice, which is how a slider stays reachable from the keyboard.
+ *
+ * `start(items)` is optional and returns the row the cursor should begin on.
+ * A page whose rows are exclusive picks wants it on the one already in force —
+ * parking the cursor on some other row draws a second mark and reads as two
+ * things being selected at once. Pages of independent toggles have no such
+ * row, and default to the top.
  */
-export function install({ items, onChoose, onChange, onAdjust }) {
+export function install({ items, onChoose, onChange, onAdjust, start }) {
   let query = '';
   // Which row the arrows act on. Typing narrows to a row; up/down walks to one
   // without typing at all. Without a cursor the arrows do nothing until a
   // query happens to leave exactly one match, which reads as a broken key.
   let cursor = 0;
+  if (start) {
+    const all = items();
+    const at = all.findIndex((c) => start(c));
+    if (at >= 0) cursor = at;
+  }
 
   const state = () => {
     const all = items();

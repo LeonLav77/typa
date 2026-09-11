@@ -1,0 +1,67 @@
+# Deploy file for the home-lab server. Pulls the image ./push.sh built; there
+# is no build: stanza on purpose, so the server never needs the source tree.
+#
+#   docker compose pull && docker compose up -d
+#
+# Rollback: change the tag to a version you pushed (typing:1.2.0), then repeat.
+
+services:
+  typing:
+    image: registry.leon-home-lab.ddns.net/typing:latest
+    container_name: typing
+    restart: unless-stopped
+
+    environment:
+      ADDR: ":8080"
+      DB_PATH: /data/typing.db
+      # Runs are bucketed by local hour and weekday, so the container's clock
+      # has to agree with the typist's, not with UTC.
+      TZ: Europe/Zagreb
+
+    # The database is the whole point of this app — every insight is a query
+    # over collected keystrokes, and it is not reproducible if lost. A named
+    # volume, not a bind mount: SQLite in WAL mode wants a filesystem that
+    # honours proper locking.
+    volumes:
+      - typing-data:/data
+
+    # No ports: — Traefik reaches the container over traefik_proxy.
+    networks:
+      - traefik_proxy
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.typing.rule=Host(`typing.leon-home-lab.ddns.net`)"
+      - "traefik.http.routers.typing.entrypoints=https"
+      - "traefik.http.routers.typing.tls=true"
+      - "traefik.http.routers.typing.tls.certresolver=letsencrypt"
+      - "traefik.http.services.typing.loadbalancer.server.port=8080"
+      - "traefik.docker.network=traefik_proxy"
+
+    # Inherited from the image, restated here so the deploy file documents it.
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+    # A run POST writes its whole event stream in one transaction; the server
+    # drains in-flight requests on SIGTERM, so give it room to finish.
+    stop_grace_period: 30s
+
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  typing-data:
+
+networks:
+  traefik_proxy:
+    external: true

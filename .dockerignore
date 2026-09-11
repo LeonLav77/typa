@@ -1,0 +1,31 @@
+# Everything the image does not need. Keeping the build context small also
+# keeps the cached COPY layer from busting on irrelevant local churn.
+.git
+.gitignore
+.claude
+.vscode
+.idea
+
+# The local build output and the local database — the image builds its own
+# binary, and the run data lives in a volume, never in the image.
+/typing
+/typing.exe
+*.db
+*.db-shm
+*.db-wal
+
+*.test
+*.out
+/bin/
+/dist/
+
+Dockerfile
+.dockerignore
+compose.yml
+compose.prod.yml
+push.sh
+README.md
+
+# NOT ignored, despite looking like docs/data: analysis.sql, schema.sql and
+# everything under templates/ and static/ are //go:embed'ed into the binary.
+# Excluding any of them breaks the build.

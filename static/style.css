@@ -533,12 +533,29 @@ body.page {
 /* Non-matching choices recede rather than vanishing: the list keeps its
    position, so the eye does not re-find it on every keystroke. */
 .choice.faded { opacity: 0.25; }
-/* The single remaining match, i.e. the one enter will take. */
+
+/* The cursor — the row enter would take — must not look like `.on`, the row
+   actually in force. They are different facts, and when they land on
+   different rows (the usual case on load) an identical treatment reads as two
+   selected options. So: `.on` owns the accent border and accent label,
+   while the cursor is a bar in the margin and nothing else. */
 .choice.ready {
-  border-color: var(--accent);
+  position: relative;
   background: var(--surface);
 }
-.choice.ready .c-label { color: var(--accent); }
+.choice.ready::before {
+  content: '';
+  position: absolute;
+  left: 0.3rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 1.1rem;
+  background: var(--accent);
+  border-radius: 1px;
+}
+/* On the row that is both chosen and current, `.on` supplies the border and
+   the label colour; the bar just says the cursor is here too. */
 /* A manual choice reads slightly brighter than a detected one, with a dot:
    it is the tag that can silently go stale, so it should not look identical
    to one the app worked out for itself. */

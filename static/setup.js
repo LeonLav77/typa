@@ -63,6 +63,11 @@ const picker = installPicker({
   items,
   onChoose: (item) => choose(item.kind, item.value),
   onChange: () => draw(),
+  // Both groups are exclusive picks, so the cursor starts on the location
+  // already in force rather than on the top row. Starting at the top would
+  // mark a second row on a page where exactly one thing is true, which reads
+  // as two locations being selected at once.
+  start: (c) => c.kind === 'location' && c.value === resolve().location,
 });
 
 const HINT = `

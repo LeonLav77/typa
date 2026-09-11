@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -8,7 +9,10 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -23,9 +27,19 @@ var pages = template.Must(template.ParseFS(templateFS, "templates/*.html"))
 // store is the run database. Nil only if the server was started without one.
 var store *Store
 
+// env returns the environment variable if set, else def. Flags stay the
+// documented interface; env vars exist so a container can be configured
+// without rewriting its command line.
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func main() {
-	addr := flag.String("addr", ":8080", "address to listen on")
-	dbPath := flag.String("db", "typing.db", "path to the SQLite database")
+	addr := flag.String("addr", env("ADDR", ":8080"), "address to listen on")
+	dbPath := flag.String("db", env("DB_PATH", "typing.db"), "path to the SQLite database")
 	flag.Parse()
 
 	static, err := fs.Sub(staticFS, "static")
@@ -51,6 +65,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(static))))
+	mux.HandleFunc("GET /healthz", handleHealth)
 	mux.HandleFunc("GET /{$}", handleIndex)
 	mux.HandleFunc("GET /api/test", handleNewTest)
 	mux.HandleFunc("POST /api/results", handleResults)
@@ -65,14 +80,52 @@ func main() {
 	mux.HandleFunc("GET /history", handleHistory)
 
 	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           mux,
+		Addr:    *addr,
+		Handler: mux,
+		// Behind Traefik, but a slow or stuck client should not pin a
+		// goroutine and a connection open forever regardless of what is in
+		// front of us.
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	// `docker compose up -d` on a new image stops the old container with
+	// SIGTERM. Draining in-flight requests matters here because a run POST
+	// writes a whole event stream in one transaction — killed mid-write it
+	// rolls back, and the typist loses the run they just finished.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-stop
+		log.Print("shutting down")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("shutdown: %v", err)
+		}
+	}()
+
 	log.Printf("typing listening on %s", *addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+}
+
+// handleHealth reports whether the process can still serve. It pings the
+// database rather than returning a bare 200: a container whose disk or volume
+// has gone away still accepts connections, and an unconditional "ok" would
+// keep it in rotation.
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if err := store.Ping(r.Context()); err != nil {
+		log.Printf("health: %v", err)
+		http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"status":"ok"}` + "\n"))
 }
 
 // indexData carries both the dealt test and the menu, since the typing page

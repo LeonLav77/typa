@@ -16,6 +16,39 @@ go test ./...
 There is no node toolchain. `templates/` and `static/` are compiled into the
 binary with `//go:embed`, so the built executable is the whole deployment.
 
+`-addr` and `-db` can also be set as `ADDR` and `DB_PATH`, which is how the
+container is configured. The flag wins if both are given.
+
+## Deploy
+
+```
+./push.sh                     # test, build, smoke-test, push :latest
+./push.sh 1.2.0               # also tag :1.2.0 as a rollback point
+```
+
+Then on the server:
+
+```
+docker compose pull && docker compose up -d
+```
+
+`push.sh` refuses to push if `go vet`/`go test` fail or if the built image
+cannot answer `/healthz` and deal a test, so a broken image never reaches the
+registry. The registry lives on the VPN; the script checks reachability before
+spending time on a build.
+
+The database is a named docker volume (`typing-data`), not a bind mount, and
+it is the only stateful thing here — every insight is a query over collected
+keystrokes, so losing it loses all of it. Traefik terminates TLS and routes
+`typing.leon-home-lab.ddns.net` to the container over the `traefik_proxy`
+network; the container publishes no host ports.
+
+| file | role |
+| --- | --- |
+| `Dockerfile` | two-stage build; static binary on alpine, non-root, `/data` volume. |
+| `compose.yml` | the server-side deploy: image, volume, Traefik labels. |
+| `push.sh` | test, build, smoke-test and push to the home-lab registry. |
+
 ## Rules
 
 - Type. A wrong character is marked red but never blocks you.

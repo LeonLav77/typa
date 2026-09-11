@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	_ "embed"
 	"fmt"
@@ -34,6 +35,14 @@ func openStore(path string) (*Store, error) {
 }
 
 func (s *Store) Close() error { return s.db.Close() }
+
+// Ping checks the database is still answerable. Used by /healthz, so it must
+// touch the file rather than just the pool: sql.DB hands back a live handle
+// for a database whose backing file has been deleted or unmounted.
+func (s *Store) Ping(ctx context.Context) error {
+	var one int
+	return s.db.QueryRowContext(ctx, "SELECT 1").Scan(&one)
+}
 
 // Save writes one run and its full event stream in a single transaction, so a
 // run is either wholly present or wholly absent — a half-written stream would
