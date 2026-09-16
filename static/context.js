@@ -317,6 +317,12 @@ export const WORK_PLACE = WORK.name;
  * choice survives a fresh visit.
  */
 const MODE_DEFAULT = {
+  // The pool words come from. Exclusive, unlike the flags below: a test is
+  // drawn from one source. Mirrors SourceID in sources.go.
+  source: 'words',
+  // The symbol flavour of a code source ($request->input rather than request).
+  // Ignored by sources that have no symbol list.
+  symbols: false,
   words: true,
   numbers: false,
   caps: false,
@@ -336,6 +342,43 @@ export const LEVEL_OF = {
 };
 
 export const LEVELS = 5;
+
+/**
+ * The selectable pools, mirroring sourceList in sources.go. `code` marks the
+ * ones with a symbol flavour, which is the only thing that makes the symbols
+ * toggle meaningful — there is nothing to decorate on plain English.
+ *
+ * Kept in step with the server by TestSourcesMatchClient, which compares the
+ * two lists: a pool added on one side only would silently deal English.
+ */
+export const SOURCES = [
+  { id: 'words', label: 'words', blurb: 'common English words', code: false },
+  { id: 'left', label: 'left hand', blurb: 'words the left hand types alone', code: false },
+  { id: 'right', label: 'right hand', blurb: 'words the right hand types alone', code: false },
+  { id: 'laravel', label: 'laravel', blurb: 'php and laravel vocabulary', code: true },
+  { id: 'go', label: 'go', blurb: 'go keywords and stdlib idioms', code: true },
+  { id: 'python', label: 'python', blurb: 'python keywords and builtins', code: true },
+];
+
+/** Look up a pool, falling back to plain words for an unknown id. */
+export function sourceById(id) {
+  return SOURCES.find((s) => s.id === id) || SOURCES[0];
+}
+
+/**
+ * Choose the pool. Exclusive, so this sets rather than toggles — and unlike
+ * the flags there is no "none": a test always comes from somewhere.
+ */
+export function setSource(id) {
+  const m = mode();
+  m.source = sourceById(id).id;
+  try {
+    localStorage.setItem(LS.mode, JSON.stringify(m));
+  } catch {
+    // Private mode: the choice lasts for this page only.
+  }
+  return m;
+}
 
 export function mode() {
   try {
@@ -384,6 +427,8 @@ export function setLevel(key, n) {
 /** The mode as query parameters, for GET / and GET /api/test. */
 export function modeQuery(m = mode()) {
   return new URLSearchParams({
+    source: String(m.source || 'words'),
+    symbols: String(!!m.symbols),
     words: String(m.words),
     numbers: String(m.numbers),
     caps: String(m.caps),
@@ -408,6 +453,13 @@ const MODE_ORDER = ['words', 'numbers', 'caps', 'punctuation'];
  */
 export function modeTag(m = mode()) {
   const on = MODE_ORDER.filter((k) => m[k]).map((k) => {
+    // `words` is not a flag name in the tag: it is the pool the words came
+    // from, so a left-hand run reads "left" and a Laravel one "laravel".
+    // Mode.String() in mode.go does the same, and the two must agree.
+    if (k === 'words') {
+      const src = sourceById(m.source);
+      return m.symbols && src.code ? `${src.id}-symbols` : src.id;
+    }
     const lv = LEVEL_OF[k] ? m[LEVEL_OF[k]] : 0;
     return lv && lv !== 3 ? `${k}${lv}` : k;
   });
@@ -416,6 +468,10 @@ export function modeTag(m = mode()) {
 
 /** Human-readable, for the indicator. */
 export function describeMode(m = mode()) {
-  const on = MODE_ORDER.filter((k) => m[k]);
+  const on = MODE_ORDER.filter((k) => m[k]).map((k) => {
+    if (k !== 'words') return k;
+    const src = sourceById(m.source);
+    return m.symbols && src.code ? `${src.label} symbols` : src.label;
+  });
   return on.length ? on.join(' + ') : 'words';
 }

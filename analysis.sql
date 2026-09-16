@@ -535,3 +535,135 @@ JOIN v_own_runs r ON r.id = k.run_id
 LEFT JOIN key_geometry g ON g.code = k.code
 WHERE g.finger IS NOT NULL
 GROUP BY r.device, g.finger, g.hand;
+
+-- === "Am I slower in Laravel than in English?" =============================
+-- Everything below splits by MODE, the same way the block above splits by
+-- keyboard and place. The question is the same shape — is this difference the
+-- exercise or is it me — and so the answer should be.
+--
+-- The stored tag is composite: 'laravel-symbols-punctuation' records the pool,
+-- the flavour and every modifier, because two runs weighted differently are
+-- different exercises. That makes the raw tag too fine to group on: turning
+-- punctuation on once would file that run under a mode of its own and it would
+-- never be comparable with anything.
+--
+-- So `pool` is extracted as its own column — the leading segment, which is the
+-- word source — while `mode` keeps the full tag for when the detail matters.
+-- Grouping by pool is what answers "am I slower in Go than in English"; the
+-- full tag is what answers "is it the language or the punctuation".
+CREATE VIEW IF NOT EXISTS v_mode_runs AS
+SELECT *,
+       COALESCE(mode, 'words') AS mode_tag,
+       -- The pool is the tag up to the first '-'. Modifier suffixes and the
+       -- '-symbols' flavour both fall away, leaving 'laravel', 'left', 'go'.
+       CASE
+         WHEN INSTR(COALESCE(mode, 'words'), '-') > 0
+         THEN SUBSTR(COALESCE(mode, 'words'), 1, INSTR(COALESCE(mode, 'words'), '-') - 1)
+         ELSE COALESCE(mode, 'words')
+       END AS pool,
+       -- Whether the symbol flavour was on. Kept separate from the pool
+       -- because '$request->input(' and 'request' are the same vocabulary at
+       -- very different difficulty, and averaging them hides both.
+       CASE WHEN INSTR(COALESCE(mode, 'words'), '-symbols') > 0 THEN 1 ELSE 0 END AS symbols
+FROM v_own_runs;
+
+-- Headline numbers per pool: the row that answers "how fast am I in Go".
+CREATE VIEW IF NOT EXISTS v_by_pool AS
+SELECT pool,
+       COUNT(*)                           AS runs,
+       CAST(AVG(wpm) AS INT)              AS mean_wpm,
+       MAX(wpm)                           AS best_wpm,
+       CAST(AVG(accuracy) AS INT)         AS mean_accuracy
+FROM v_mode_runs
+GROUP BY pool;
+
+-- Per pool and flavour, so the cost of the symbols themselves is visible
+-- rather than averaged into the language.
+CREATE VIEW IF NOT EXISTS v_by_pool_flavour AS
+SELECT pool || CASE WHEN symbols THEN ' · symbols' ELSE '' END AS pool_flavour,
+       COUNT(*)                           AS runs,
+       CAST(AVG(wpm) AS INT)              AS mean_wpm,
+       MAX(wpm)                           AS best_wpm,
+       CAST(AVG(accuracy) AS INT)         AS mean_accuracy
+FROM v_mode_runs
+GROUP BY pool, symbols;
+
+-- The full tag, modifiers included. This is the fine-grained one: it answers
+-- "is it Go that is slow, or Go with punctuation on".
+CREATE VIEW IF NOT EXISTS v_by_mode AS
+SELECT mode_tag                           AS mode,
+       COUNT(*)                           AS runs,
+       CAST(AVG(wpm) AS INT)              AS mean_wpm,
+       MAX(wpm)                           AS best_wpm,
+       CAST(AVG(accuracy) AS INT)         AS mean_accuracy
+FROM v_mode_runs
+GROUP BY mode_tag;
+
+-- Per-key pace split by pool. The per-mode twin of v_key_by_device: which keys
+-- a language actually costs you, rather than only its headline speed. A Go run
+-- is dense in braces and colons, and this is where that shows.
+CREATE VIEW IF NOT EXISTS v_key_by_pool AS
+SELECT r.pool,
+       k.expected                         AS key,
+       COUNT(*)                           AS attempts,
+       ROUND(100.0 * SUM(k.ok) / COUNT(*), 1) AS accuracy,
+       CAST(AVG(k.flight_ms) AS INT)      AS mean_flight_ms
+FROM v_keydowns k
+JOIN v_mode_runs r ON r.id = k.run_id
+GROUP BY r.pool, k.expected;
+
+-- Per finger, split by pool. This is the one the hand-only modes exist for:
+-- a left-hand run should show the left fingers carrying every keystroke, and
+-- what that costs in pace on the fingers that rarely lead.
+CREATE VIEW IF NOT EXISTS v_finger_by_pool AS
+SELECT r.pool,
+       g.finger, g.hand,
+       COUNT(*)                           AS attempts,
+       ROUND(100.0 * SUM(k.ok) / COUNT(*), 1) AS accuracy,
+       CAST(AVG(k.flight_ms) AS INT)      AS mean_flight_ms
+FROM v_keydowns k
+JOIN v_mode_runs r ON r.id = k.run_id
+LEFT JOIN key_geometry g ON g.code = k.code
+WHERE g.finger IS NOT NULL
+GROUP BY r.pool, g.finger, g.hand;
+
+-- Per hand, split by pool: the direct read on the one-handed modes. With
+-- `left` selected the right hand should be near-absent, and the interesting
+-- number is what the left hand's pace looks like when it works alone.
+CREATE VIEW IF NOT EXISTS v_hand_by_pool AS
+SELECT r.pool,
+       g.hand,
+       COUNT(*)                           AS attempts,
+       ROUND(100.0 * SUM(k.ok) / COUNT(*), 1) AS accuracy,
+       CAST(AVG(k.flight_ms) AS INT)      AS mean_flight_ms
+FROM v_keydowns k
+JOIN v_mode_runs r ON r.id = k.run_id
+LEFT JOIN key_geometry g ON g.code = k.code
+WHERE g.hand IS NOT NULL
+GROUP BY r.pool, g.hand;
+
+-- Hard words per pool. `laravel` and `go` share plenty of vocabulary, so the
+-- words that cost you in one and not the other are the interesting rows.
+CREATE VIEW IF NOT EXISTS v_hard_words_by_pool AS
+SELECT r.pool,
+       w.word,
+       COUNT(*)                                  AS attempts,
+       ROUND(100.0 * SUM(w.correct) / COUNT(*), 1) AS accuracy,
+       CAST(AVG(NULLIF(w.last_ms - w.first_ms, 0)) AS INT) AS mean_ms
+FROM run_words w
+JOIN v_mode_runs r ON r.id = w.run_id
+WHERE w.typed <> ''
+GROUP BY r.pool, w.word
+HAVING COUNT(*) >= 3;
+
+-- Progress per pool, so improvement in one language is visible rather than
+-- averaged into the total. Local date, for the reason v_progress explains.
+CREATE VIEW IF NOT EXISTS v_progress_by_pool AS
+SELECT pool,
+       DATE((started_at - COALESCE(tz_offset,0) * 60000) / 1000, 'unixepoch') AS day,
+       COUNT(*)                             AS runs,
+       CAST(AVG(wpm) AS INT)                AS mean_wpm,
+       MAX(wpm)                             AS best_wpm,
+       CAST(AVG(accuracy) AS INT)           AS mean_accuracy
+FROM v_mode_runs
+GROUP BY pool, day;

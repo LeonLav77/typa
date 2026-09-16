@@ -49,6 +49,29 @@ network; the container publishes no host ports.
 | `compose.yml` | the server-side deploy: image, volume, Traefik labels. |
 | `push.sh` | test, build, smoke-test and push to the home-lab registry. |
 
+## Modes
+
+The text comes from one **source**, chosen on `/text`: common English, one
+hand only, or a language's vocabulary (laravel/php, go, python). Numbers,
+punctuation and capitals then decorate whatever the source produced.
+
+Code sources have a **symbols** flavour: `$request->input(` rather than
+`request`. It is off by default, because the bare identifiers keep the
+punctuation and caps modifiers meaningful and stay comparable with an ordinary
+English run.
+
+The one-handed pools are their own word lists rather than a filter over
+`words.go`. Filtering yields 54 left-hand words and nine right-hand ones —
+QWERTY puts `a` and `e` under the left hand, so right-hand-only English is
+nearly empty, and a 50-word test drawn from nine words is a memorisation
+drill. `handwords.go` explains the asymmetry.
+
+Every run is tagged with its source, so `/modes` separates them the way
+`/setup`'s tags separate work from home: being slow in Go is a different fact
+from being slow. The stored tag keeps every modifier (`go-symbols-punctuation`)
+while the analysis groups on the leading *pool*, so turning punctuation on once
+does not file that run under a mode of its own.
+
 ## Rules
 
 - Type. A wrong character is marked red but never blocks you.
@@ -66,7 +89,10 @@ network; the container publishes no host ports.
 | `main.go` | routes, embedded assets, template rendering. |
 | `engine.go` | deals a test: token selection and the id that names it. |
 | `mode.go` | what a test is made of, and the generator that builds it. |
+| `sources.go` | the word pools: English, one hand, or a language. |
 | `words.go` | ~750 common English words. |
+| `handwords.go` | one-handed pools, checked against the keymap by test. |
+| `langwords.go` | laravel/php, go and python vocabularies, bare and with symbols. |
 | `templates/index.html` | the page, with the first test already rendered into it. |
 | `static/engine.js` | pure client state: input, keystroke log, WPM/accuracy. No DOM. |
 | `static/render.js` | imperative DOM for the 50 words; patches only the active word. |

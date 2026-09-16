@@ -556,6 +556,16 @@ body.page {
 }
 /* On the row that is both chosen and current, `.on` supplies the border and
    the label colour; the bar just says the cursor is here too. */
+/* The symbols flavour, shown under a code source. Set apart from the pools
+   above it rather than listed among them, because it is a property of the
+   chosen pool and not a seventh pool — but drawn as the same kind of row, so
+   it is reachable from the keyboard like everything else on this page. */
+.symbols-row {
+  margin-top: 0.3rem;
+  padding-left: 1.1rem;
+  border-left: 1px solid var(--line);
+}
+
 /* A manual choice reads slightly brighter than a detected one, with a dot:
    it is the tag that can silently go stale, so it should not look identical
    to one the app worked out for itself. */

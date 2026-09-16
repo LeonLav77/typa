@@ -77,6 +77,7 @@ func main() {
 	mux.HandleFunc("GET /errors", handleErrors)
 	mux.HandleFunc("GET /rhythm", handleRhythm)
 	mux.HandleFunc("GET /words", handleWords)
+	mux.HandleFunc("GET /modes", handleModes)
 	mux.HandleFunc("GET /history", handleHistory)
 
 	srv := &http.Server{

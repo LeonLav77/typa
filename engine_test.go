@@ -283,6 +283,7 @@ func TestMenuSectionsAreRoutable(t *testing.T) {
 		"/errors":   handleErrors,
 		"/rhythm":   handleRhythm,
 		"/words":    handleWords,
+		"/modes":    handleModes,
 		"/history":  handleHistory,
 		"/overview": handleOverview,
 		"/text":     handleText,
@@ -627,15 +628,23 @@ func TestModeFromQuery(t *testing.T) {
 		q    string
 		want Mode
 	}{
-		{"", Mode{Words: true}},
-		{"words=true", Mode{Words: true}},
-		{"words=false&numbers=true", Mode{Numbers: true}},
-		{"numbers=true", Mode{Words: true, Numbers: true}},
-		{"words=true&caps=true&punctuation=true", Mode{Words: true, Caps: true, Punctuation: true}},
+		// An absent `source` means the plain-words pool, so every expectation
+		// below carries it: the zero SourceID is not a valid pool.
+		{"", Mode{Words: true, Source: SrcWords}},
+		{"words=true", Mode{Words: true, Source: SrcWords}},
+		{"words=false&numbers=true", Mode{Numbers: true, Source: SrcWords}},
+		{"numbers=true", Mode{Words: true, Numbers: true, Source: SrcWords}},
+		{"words=true&caps=true&punctuation=true", Mode{Words: true, Caps: true, Punctuation: true, Source: SrcWords}},
 		// No source at all cannot make text; fall back rather than deal blank.
-		{"words=false&numbers=false", Mode{Words: true}},
+		{"words=false&numbers=false", Mode{Words: true, Source: SrcWords}},
 		// Garbage keeps the default rather than failing the request.
-		{"words=banana", Mode{Words: true}},
+		{"words=banana", Mode{Words: true, Source: SrcWords}},
+		// A named pool is carried through, and an unknown one falls back to
+		// words rather than dealing from an empty list.
+		{"source=laravel", Mode{Words: true, Source: SrcLaravel}},
+		{"source=left", Mode{Words: true, Source: SrcLeftHand}},
+		{"source=go&symbols=true", Mode{Words: true, Source: SrcGo, Symbols: true}},
+		{"source=nope", Mode{Words: true, Source: SrcWords}},
 	} {
 		q, err := url.ParseQuery(tc.q)
 		if err != nil {

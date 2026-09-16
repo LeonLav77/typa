@@ -16,6 +16,12 @@ import (
 // a preset list would need a new entry for every combination, and would still
 // miss the one the user wanted next.
 type Mode struct {
+	// Source is the pool words are drawn from: plain English, one hand only,
+	// or a programming vocabulary. Exclusive, unlike the flags below — a test
+	// is drawn from one pool — and empty means plain words.
+	Source  SourceID `json:"source"`
+	Symbols bool     `json:"symbols"`
+
 	Words       bool `json:"words"`
 	Numbers     bool `json:"numbers"`
 	Caps        bool `json:"caps"`
@@ -76,8 +82,11 @@ var loneCapAt = [levels + 1]float64{0, 0.05, 0.10, 0.18, 0.30, 0.45}
 
 // defaultMode is the test as it has always been: plain lowercase words.
 func defaultMode() Mode {
-	return Mode{Words: true}
+	return Mode{Words: true, Source: SrcWords}
 }
+
+// pool is the source this mode draws from, defaulting to plain words.
+func (m Mode) pool() Source { return lookupSource(m.Source) }
 
 // valid reports whether the mode can produce any text at all. Caps and
 // Punctuation are modifiers, so a mode with neither source on is empty no
@@ -92,6 +101,8 @@ func (m Mode) valid() bool { return m.Words || m.Numbers }
 // screen usable instead of blank.
 func modeFromQuery(q url.Values) Mode {
 	m := Mode{
+		Source:      sourceParam(q),
+		Symbols:     boolParam(q, "symbols", false),
 		Words:       boolParam(q, "words", true),
 		Numbers:     boolParam(q, "numbers", false),
 		Caps:        boolParam(q, "caps", false),
@@ -104,6 +115,17 @@ func modeFromQuery(q url.Values) Mode {
 		return defaultMode()
 	}
 	return m
+}
+
+// sourceParam reads the word pool off the URL. An unknown id falls back to
+// plain words for the same reason a malformed level does: a stale bookmark
+// should deal an ordinary test, not an error.
+func sourceParam(q url.Values) SourceID {
+	id := SourceID(q.Get("source"))
+	if _, ok := sourceByID[id]; ok {
+		return id
+	}
+	return SrcWords
 }
 
 // levelParam reads a 1..5 slider position. Anything absent or unparseable
@@ -136,9 +158,18 @@ func boolParam(q url.Values, key string, def bool) bool {
 // attribute, and html/template escapes '+' to "&#43;", which silently broke a
 // string comparison on the client.
 func (m Mode) String() string {
-	parts := make([]string, 0, 4)
+	parts := make([]string, 0, 5)
 	if m.Words {
-		parts = append(parts, "words")
+		// The pool names the run: a left-hand test and a laravel test are
+		// different exercises, and pooling them under "words" would make the
+		// per-mode comparison this tag exists for meaningless. Symbols ride
+		// along for the same reason — they are a different exercise again.
+		src := m.pool()
+		name := string(src.ID)
+		if m.Symbols && src.symbols != nil {
+			name += "-symbols"
+		}
+		parts = append(parts, name)
 	}
 	// A level rides with its flag: two runs weighted differently are different
 	// exercises, and a tag that hid that would pool them in analysis. The
@@ -217,6 +248,10 @@ func generate(r *rand.Rand, n int, m Mode) []string {
 	extraCap := extraCapAt[clampLevel(m.CapLevel)]
 	loneCap := loneCapAt[clampLevel(m.CapLevel)]
 
+	// Resolve the pool once too: it is a slice lookup per token, and doing it
+	// here keeps nextToken from having to know about sources at all.
+	pool := m.pool().tokens(m.Symbols)
+
 	out := make([]string, 0, n)
 	// Tokens still owed to the sentence being built; 0 means the next token
 	// opens a new one.
@@ -239,13 +274,13 @@ func generate(r *rand.Rand, n int, m Mode) []string {
 			}
 		}
 
-		tok := nextToken(r, m, numShare)
+		tok := nextToken(r, m, pool, numShare)
 		// A sentence must not open on a number: a digit cannot take a capital,
 		// so "608 use network." reads as a missing capital rather than a
 		// deliberate one. Re-draw a word for that position when one is
 		// available.
 		if m.Caps && m.Punctuation && opening && m.Words && len(tok) > 0 && isDigit(tok[0]) {
-			tok = words[r.Intn(len(words))]
+			tok = pool[r.Intn(len(pool))]
 		}
 
 		// Capitalise the token that opens a sentence. Without punctuation
@@ -294,18 +329,25 @@ func generate(r *rand.Rand, n int, m Mode) []string {
 }
 
 // nextToken picks one token from the enabled sources. `numShare` is how often
-// a number wins when both sources are on.
-func nextToken(r *rand.Rand, m Mode, numShare float64) string {
+// a number wins when both sources are on. `pool` is the word source already
+// resolved by the caller.
+func nextToken(r *rand.Rand, m Mode, pool []string, numShare float64) string {
+	// An empty pool would panic on the modulo below. It should be impossible —
+	// every registered source ships a non-empty list — but a pool is data, and
+	// dealing ordinary words beats taking the server down over a typo.
+	if len(pool) == 0 {
+		pool = words
+	}
 	switch {
 	case m.Words && m.Numbers:
 		if r.Float64() < numShare {
 			return randomNumber(r)
 		}
-		return words[r.Intn(len(words))]
+		return pool[r.Intn(len(pool))]
 	case m.Numbers:
 		return randomNumber(r)
 	default:
-		return words[r.Intn(len(words))]
+		return pool[r.Intn(len(pool))]
 	}
 }
 

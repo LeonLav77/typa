@@ -23,6 +23,7 @@ var sections = []Section{
 	{"E", "/errors", "errors", "what you miss and how you recover"},
 	{"R", "/rhythm", "rhythm", "timing, pauses and consistency"},
 	{"W", "/words", "words", "word length, hard words, position"},
+	{"M", "/modes", "modes", "english against code, and one hand against two"},
 	{"H", "/history", "history", "progress, time of day, streaks"},
 	{"X", "/text", "text", "what the test is made of"},
 	{"S", "/setup", "setup", "where you are and what you type on"},
@@ -70,7 +71,12 @@ type Row struct {
 	Count    int
 	Accuracy float64
 	Millis   int
-	Extra    string
+	// Score is a rate where bigger is better — wpm, today. Kept apart from
+	// Millis because the two scale in opposite directions: a long time is a
+	// bad row and a high score is a good one, and a table that drew them the
+	// same way would rank one of them backwards.
+	Score int
+	Extra string
 }
 
 // Table is a titled group of rows with a unit for its bars.
@@ -81,6 +87,9 @@ type Table struct {
 	Rows  []Row
 	// Bars scale against the largest Millis when true, otherwise Count.
 	ByTime bool
+	// ByScore draws and labels rows by Score instead. Mutually exclusive with
+	// ByTime; both set is a programming error, and ByTime wins.
+	ByScore bool
 }
 
 /* ------------------------------------------------------------------ pages */
@@ -143,6 +152,58 @@ func handleKeys(w http.ResponseWriter, r *http.Request) {
 		 WHERE presses >= 10 AND key <> ' ' ORDER BY mean_hold_ms DESC LIMIT 12`))
 
 	render(w, r, "analytics.html", "/keys", "keys", tables)
+}
+
+// handleModes separates every number by what was being typed. A left-hand run
+// and a Laravel run are different exercises, and pooling them with ordinary
+// English makes both unreadable — the same argument that gives /setup its
+// location and device tags, applied to the text itself.
+//
+// Grouping is by POOL rather than the full mode tag: the stored tag records
+// every modifier, so grouping on it raw would file "go with punctuation" as a
+// mode of its own and never compare it with anything. The full tag gets its
+// own table below, where that detail is the question.
+func handleModes(w http.ResponseWriter, r *http.Request) {
+	tables := []Table{}
+
+	tables = append(tables, s2score(
+		"pace by mode", "mean wpm for each thing you type", " wpm",
+		`SELECT pool, runs, mean_accuracy, mean_wpm
+		 FROM v_by_pool ORDER BY mean_wpm DESC`))
+
+	tables = append(tables, s2score(
+		"bare against symbols", "what the sigils and brackets actually cost", " wpm",
+		`SELECT pool_flavour, runs, mean_accuracy, mean_wpm
+		 FROM v_by_pool_flavour ORDER BY mean_wpm DESC`))
+
+	tables = append(tables, s2table(
+		"accuracy by mode", "", "%", false,
+		`SELECT pool, runs, mean_accuracy, mean_wpm
+		 FROM v_by_pool ORDER BY mean_accuracy ASC`))
+
+	tables = append(tables, s2score(
+		"with modifiers", "the full tag, so caps and punctuation are separable", " wpm",
+		`SELECT mode, runs, mean_accuracy, mean_wpm
+		 FROM v_by_mode ORDER BY runs DESC LIMIT 20`))
+
+	tables = append(tables, s2table(
+		"hands, by mode", "the one-handed modes should show one hand carrying the run", "ms", true,
+		`SELECT pool || ' · ' || hand, attempts, accuracy, mean_flight_ms
+		 FROM v_hand_by_pool ORDER BY pool, hand`))
+
+	tables = append(tables, s2table(
+		"slowest keys in code", "at least 10 attempts outside plain English", "ms", true,
+		`SELECT pool || ' · ' || key, attempts, accuracy, mean_flight_ms
+		 FROM v_key_by_pool
+		 WHERE attempts >= 10 AND key <> ' ' AND pool NOT IN ('words','left','right')
+		 ORDER BY mean_flight_ms DESC LIMIT 15`))
+
+	tables = append(tables, s2table(
+		"hardest words by mode", "seen at least 3 times in that mode", "%", false,
+		`SELECT pool || ' · ' || word, attempts, accuracy, mean_ms
+		 FROM v_hard_words_by_pool ORDER BY accuracy ASC, attempts DESC LIMIT 20`))
+
+	render(w, r, "analytics.html", "/modes", "modes", tables)
 }
 
 func handleErrors(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +349,20 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 // Table. Every analytics query on these pages has that shape, so one helper
 // covers all of them and the page handlers stay readable as a list of
 // questions.
+// s2score is s2table for tables whose fourth column is a rate rather than a
+// duration — wpm, where bigger is better and the bar is drawn from zero.
+func s2score(title, note, unit, query string) Table {
+	t := s2table(title, note, unit, false, query)
+	t.ByScore = true
+	// The fourth column landed in Millis; move it to Score, which is what
+	// ByScore draws and labels from.
+	for i := range t.Rows {
+		t.Rows[i].Score = t.Rows[i].Millis
+		t.Rows[i].Millis = 0
+	}
+	return t
+}
+
 func s2table(title, note, unit string, byTime bool, query string) Table {
 	t := Table{Title: title, Note: note, Unit: unit, ByTime: byTime, Rows: []Row{}}
 
@@ -328,6 +403,21 @@ func s2table(title, note, unit string, byTime bool, query string) Table {
 // difference the table exists to show. Time bars therefore span the range
 // present, with a floor so the fastest row stays visible rather than vanishing.
 func (t Table) Bar(r Row) string {
+	if t.ByScore && !t.ByTime {
+		// Scores are drawn from zero like counts: 0 wpm is a real floor, so
+		// the proportions are honest without the range trick times need.
+		max := 0
+		for _, row := range t.Rows {
+			if row.Score > max {
+				max = row.Score
+			}
+		}
+		if max == 0 {
+			return "0"
+		}
+		return fmt.Sprintf("%.1f", float64(r.Score)/float64(max)*100)
+	}
+
 	if !t.ByTime {
 		max := 0
 		for _, row := range t.Rows {
@@ -362,6 +452,9 @@ func (t Table) Bar(r Row) string {
 func (t Table) Value(r Row) string {
 	if t.ByTime {
 		return fmt.Sprintf("%d%s", r.Millis, t.Unit)
+	}
+	if t.ByScore {
+		return fmt.Sprintf("%d%s", r.Score, t.Unit)
 	}
 	if t.Unit == "%" {
 		return fmt.Sprintf("%.1f%%", r.Accuracy)

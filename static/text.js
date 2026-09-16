@@ -1,16 +1,31 @@
 /**
  * What the test is made of.
  *
- * `words` and `numbers` are sources and compose; `caps` and `punctuation`
- * decorate whatever those produce. Turning words off and numbers on gives a
- * digits-only test without a mode named "numbers only" — the combination falls
- * out rather than being enumerated, which is what stops the list needing a new
- * entry for every pairing someone wants next.
+ * Two kinds of choice live here. The SOURCE is exclusive — English, one hand
+ * only, or a programming vocabulary — because a test is drawn from one pool.
+ * The flags below it compose: `numbers` adds tokens, `caps` and `punctuation`
+ * decorate whatever the pool produced.
+ *
+ * Splitting them that way is what keeps "left hand" and "laravel" from being
+ * special cases. A new language is one entry in SOURCES and nothing else
+ * changes, where a flag per language would need a rule for what "go + python"
+ * means — a question with no good answer.
  *
  * The server owns generation. This only records the choice; the flags travel
  * on the query string when a test is dealt.
  */
-import { mode, toggleMode, setLevel, modeQuery, modeTag, LEVEL_OF, LEVELS } from './context.js';
+import {
+  mode,
+  toggleMode,
+  setLevel,
+  setSource,
+  sourceById,
+  modeQuery,
+  modeTag,
+  LEVEL_OF,
+  LEVELS,
+  SOURCES,
+} from './context.js';
 import { install as installPicker, queryLine, escape } from './picker.js';
 import { install as installMenu } from './menu.js';
 
@@ -28,21 +43,48 @@ const TEXT = [
   ['caps', 'capitals', 'sentence capitals — needs words to capitalise', ['uppercase']],
 ];
 
-const items = () =>
-  TEXT.map(([value, label, , alias]) => ({ kind: 'text', value, label, alias }));
+// Sources and toggles share one picker, so typing narrows across both and
+// enter takes whatever it lands on. `kind` is what tells them apart when a
+// choice is made: a source is set, a flag is flipped.
+const items = () => [
+  ...SOURCES.map((s) => ({
+    kind: 'source',
+    value: s.id,
+    label: s.label,
+    // No alias starting with a letter the toggles below already own: `w`
+    // must keep meaning the words flag, not the English pool.
+    alias: s.id === 'words' ? ['english'] : [s.id],
+  })),
+  // Symbols is in the picker rather than being a checkbox off to one side,
+  // because this page is driven from the keyboard and a control that needs a
+  // mouse is one that cannot be reached at all. It appears only while the
+  // chosen source has a symbol flavour: a row that silently does nothing on
+  // English would be worse than no row.
+  ...(sourceById(mode().source).code
+    ? [{ kind: 'text', value: 'symbols', label: 'symbols', alias: ['sigils'] }]
+    : []),
+  ...TEXT.map(([value, label, , alias]) => ({ kind: 'text', value, label, alias })),
+];
 
 const picker = installPicker({
   items,
   onChoose: (item) => {
-    toggleMode(item.value);
+    if (item.kind === 'source') setSource(item.value);
+    else toggleMode(item.value);
     draw();
     refreshSample();
   },
   onChange: () => draw(),
+  // The cursor starts on the pool already in force, not on the top row. The
+  // sources are an exclusive pick, so parking the cursor elsewhere marks a
+  // second row on a group where exactly one thing is true — the same reason
+  // /setup does this.
+  start: (c) => c.kind === 'source' && c.value === mode().source,
   // Arrows move the slider of whatever the query has narrowed to, so the
   // levels are reachable without a mouse like everything else here. Adjusting
   // something switched off would be a silent no-op, so it turns it on first.
   onAdjust: (item, delta) => {
+    if (item.kind === 'source') return; // a pool has no amount to adjust
     const lvKey = LEVEL_OF[item.value];
     if (!lvKey) return;
     const m = mode();
@@ -57,7 +99,7 @@ const HINT = `
   <kbd>↑</kbd><kbd>↓</kbd> <span class="dim">move ·</span>
   <kbd>space</kbd> <span class="dim">toggle ·</span>
   <kbd>←</kbd><kbd>→</kbd> <span class="dim">how much ·</span>
-  <span class="dim">or type</span> <kbd>w</kbd> <kbd>n</kbd> <kbd>p</kbd> <kbd>c</kbd>`;
+  <span class="dim">or type a source or flag by name</span>`;
 
 function draw() {
   const m = mode();
@@ -66,11 +108,26 @@ function draw() {
   root.innerHTML = `
     ${queryLine(st, {
       hint: HINT,
-      verb: (c) => (mode()[c.value] ? 'turns it off' : 'turns it on'),
+      verb: (c) =>
+        c.kind === 'source'
+          ? 'draws from it'
+          : mode()[c.value]
+            ? 'turns it off'
+            : 'turns it on',
     })}
+    ${sourceGroup(m, st)}
     ${group(m, st)}
     ${preview()}
   `;
+
+  for (const el of root.querySelectorAll('button[data-source]')) {
+    el.addEventListener('click', () => {
+      setSource(el.dataset.source);
+      picker.clear();
+      draw();
+      refreshSample();
+    });
+  }
 
   for (const el of root.querySelectorAll('button[data-value]')) {
     el.addEventListener('click', () => {
@@ -98,14 +155,73 @@ function draw() {
 }
 
 /**
- * The toggles. Unlike the exclusive picks on /setup several can be on at once,
- * so they get a box rather than a single-selection mark.
+ * The pool. An exclusive pick, drawn like /setup's groups rather than the
+ * toggles below: exactly one is in force, so it gets a single-selection mark
+ * and no checkbox.
+ *
+ * The symbols row hangs off the chosen source instead of standing alone,
+ * because it means nothing on English — there are no sigils to add to "the".
+ * Showing it only where it applies beats a row that silently does nothing.
  */
-function group(m, { query, hits, only, active }) {
-  const hit = (v) => hits.some((h) => h.value === v);
+function sourceGroup(m, { query, hits, active }) {
+  const chosen = sourceById(m.source);
+  const hit = (v) => hits.some((h) => h.kind === 'source' && h.value === v);
 
   return `
     <section class="setup-group">
+      <h2>source</h2>
+      <div class="choices">
+        ${SOURCES.map((s) => {
+          const on = s.id === chosen.id;
+          const matched = query ? hit(s.id) : false;
+          const faded = query && !matched ? ' faded' : '';
+          const ready =
+            active && active.kind === 'source' && active.value === s.id ? ' ready' : '';
+          return `
+            <button type="button" data-source="${s.id}"
+                    class="choice${on ? ' on' : ''}${faded}${ready}"
+                    ${on ? 'aria-current="true"' : ''}>
+              <span class="c-label">${escape(s.label)}</span>
+              <span class="c-blurb">${escape(s.blurb)}</span>
+            </button>`;
+        }).join('')}
+      </div>
+      ${
+        chosen.code
+          ? `<div class="choices symbols-row">
+               ${(() => {
+                 const on = !!m.symbols;
+                 const matched = query ? hits.some((h) => h.value === 'symbols') : false;
+                 const faded = query && !matched ? ' faded' : '';
+                 const ready =
+                   active && active.kind === 'text' && active.value === 'symbols'
+                     ? ' ready'
+                     : '';
+                 return `
+                   <button type="button" data-value="symbols"
+                           class="choice toggle${on ? ' on' : ''}${faded}${ready}"
+                           aria-pressed="${on}">
+                     <span class="c-label"><span class="box">${on ? '×' : ''}</span>symbols</span>
+                     <span class="c-blurb">$request-&gt;input( rather than request — the real
+                     thing, and much harder</span>
+                   </button>`;
+               })()}
+             </div>`
+          : ''
+      }
+    </section>`;
+}
+
+/**
+ * The toggles. Unlike the exclusive picks above several can be on at once, so
+ * they get a box rather than a single-selection mark.
+ */
+function group(m, { query, hits, active }) {
+  const hit = (v) => hits.some((h) => h.kind === 'text' && h.value === v);
+
+  return `
+    <section class="setup-group">
+      <h2>and also</h2>
       <div class="choices">
         ${TEXT.map(([value, label, blurb]) => {
           const on = !!m[value];
@@ -115,7 +231,10 @@ function group(m, { query, hits, only, active }) {
           const faded = query && !matched ? ' faded' : '';
           // `ready` marks the row the arrows and enter will act on, whether it
           // was reached by typing or by walking with up/down.
-          const ready = active && active.value === value ? ' ready' : '';
+          // Matched on kind too: the source group also has a row valued
+          // 'words', and without this both light up as the cursor.
+          const ready =
+            active && active.kind === 'text' && active.value === value ? ' ready' : '';
           // Capitals need something to capitalise. With words off the flag is
           // still stored, it simply has nothing to act on — saying so beats
           // hiding the row and leaving the state unexplained.
@@ -131,7 +250,7 @@ function group(m, { query, hits, only, active }) {
                 <span class="c-label"><span class="box">${on ? '×' : ''}</span>${label}${moot}</span>
                 <span class="c-blurb">${blurb}</span>
               </button>
-              ${on ? slider(value, m, active && active.value === value) : ''}
+              ${on ? slider(value, m, active && active.kind === 'text' && active.value === value) : ''}
             </div>`;
         }).join('')}
       </div>
